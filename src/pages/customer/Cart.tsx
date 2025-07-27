@@ -5,12 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Separator } from "@/components/ui/separator";
 import { MenuItem } from "@/components/MenuCard";
 import { useNavigate } from "react-router-dom";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus, Minus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 
+interface CartItem extends MenuItem {
+  quantity: number;
+}
+
 export default function CustomerCart() {
-  const [cartItems, setCartItems] = useState<MenuItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -21,17 +25,30 @@ export default function CustomerCart() {
       // @ts-ignore
       setUser(user);
     };
-    fetchUser();
-    // For now, we'll use a placeholder for cart items.
-    // In a real app, this would come from local storage or a user-specific cart table.
+
     const fetchCartItems = async () => {
       const { data } = await supabase.from("menu_items").select("*").limit(2);
-      setCartItems(data as MenuItem[] || []);
+      setCartItems(data?.map(item => ({ ...item, quantity: 1 })) as CartItem[] || []);
     };
+
+    fetchUser();
     fetchCartItems();
   }, []);
 
-  const totalAmount = cartItems.reduce((sum, item) => sum + item.price, 0);
+  const handleQuantityChange = (itemId: string, quantity: number) => {
+    setCartItems(prev => {
+      if (quantity === 0) {
+        return prev.filter(item => item.id !== itemId);
+      }
+      return prev.map(item => item.id === itemId ? { ...item, quantity } : item);
+    });
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    setCartItems(prev => prev.filter(item => item.id !== itemId));
+  };
+
+  const totalAmount = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   const handleCheckout = async () => {
     if (!user) {
@@ -41,26 +58,30 @@ export default function CustomerCart() {
     }
 
     const orderSummary = {
-      items: cartItems.map(item => ({ id: item.id, name: item.name, price: item.price })),
+      items: cartItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      })),
       total: totalAmount * 1.1,
     };
 
-    const { error } = await supabase.from('orders').insert({
+    const { data, error } = await supabase.from('orders').insert({
       // @ts-ignore
       customer_id: user.id,
       order_summary: orderSummary,
       total_amount: orderSummary.total,
       payment_status: 'pending',
       payment_method: 'cod',
-    });
+    }).select();
 
     if (error) {
       toast({ title: "Order failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Order placed!", description: "Your order has been placed successfully." });
-      // Clear cart after successful order
       setCartItems([]);
-      navigate("/order-confirmation");
+      navigate("/payment", { state: { order: data[0] } });
     }
   };
 
@@ -94,9 +115,18 @@ export default function CustomerCart() {
                           <p className="text-sm text-muted-foreground">₹{item.price}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center space-x-2">
+                        <Button variant="outline" size="sm" onClick={() => handleQuantityChange(item.id, item.quantity - 1)}>
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <span>{item.quantity}</span>
+                        <Button variant="outline" size="sm" onClick={() => handleQuantityChange(item.id, item.quantity + 1)}>
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleRemoveItem(item.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </CardContent>

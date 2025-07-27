@@ -59,6 +59,18 @@ export default function CustomerMenu() {
     });
   };
 
+  const handleQuantityChange = (itemId: string, quantity: number) => {
+    setCart(prev => {
+      const newCart = { ...prev };
+      if (quantity === 0) {
+        delete newCart[itemId];
+      } else {
+        newCart[itemId] = quantity;
+      }
+      return newCart;
+    });
+  };
+
   const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
 
   return (
@@ -111,7 +123,8 @@ export default function CustomerMenu() {
               item={item}
               quantity={cart[item.id] || 0}
               onAddToCart={handleAddToCart}
-              showQuantityControls={false}
+              onQuantityChange={handleQuantityChange}
+              showQuantityControls={true}
             />
           ))}
         </div>
