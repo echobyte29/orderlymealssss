@@ -25,13 +25,13 @@ export default function CustomerCart() {
       // @ts-ignore
       setUser(user);
     };
-    fetchUser();
-    // For now, we'll use a placeholder for cart items.
-    // In a real app, this would come from local storage or a user-specific cart table.
+
     const fetchCartItems = async () => {
       const { data } = await supabase.from("menu_items").select("*").limit(2);
       setCartItems(data?.map(item => ({ ...item, quantity: 1 })) as CartItem[] || []);
     };
+
+    fetchUser();
     fetchCartItems();
   }, []);
 
@@ -58,7 +58,12 @@ export default function CustomerCart() {
     }
 
     const orderSummary = {
-      items: cartItems.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity })),
+      items: cartItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      })),
       total: totalAmount * 1.1,
     };
 
@@ -75,7 +80,6 @@ export default function CustomerCart() {
       toast({ title: "Order failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Order placed!", description: "Your order has been placed successfully." });
-      // Clear cart after successful order
       setCartItems([]);
       navigate("/payment", { state: { order: data[0] } });
     }
