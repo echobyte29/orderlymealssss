@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Navigation } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,68 +9,15 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { MenuCard, MenuItem } from "@/components/MenuCard";
-import { Plus, Edit, Trash2, Upload } from "lucide-react";
+import { MenuItem } from "@/components/MenuCard";
+import { Plus, Edit, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabaseClient";
 
 const categories = ["Main Course", "Rice", "South Indian", "Desserts", "Beverages"];
 
-// Mock menu data
-const mockMenuItems: MenuItem[] = [
-  {
-    id: "1",
-    name: "Butter Chicken",
-    description: "Creamy tomato-based curry with tender chicken pieces",
-    price: 299,
-    image: "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=400",
-    category: "Main Course",
-    available: true,
-    isVeg: false
-  },
-  {
-    id: "2",
-    name: "Paneer Tikka Masala",
-    description: "Grilled cottage cheese in rich spiced gravy",
-    price: 249,
-    image: "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=400",
-    category: "Main Course",
-    available: true,
-    isVeg: true
-  },
-  {
-    id: "3",
-    name: "Biryani Special",
-    description: "Aromatic basmati rice with spiced meat and saffron",
-    price: 349,
-    image: "https://images.unsplash.com/photo-1563379091339-03246963d25a?w=400",
-    category: "Rice",
-    available: true,
-    isVeg: false
-  },
-  {
-    id: "4",
-    name: "Masala Dosa",
-    description: "Crispy crepe filled with spiced potato curry",
-    price: 149,
-    image: "https://images.unsplash.com/photo-1630383249896-424e482df921?w=400",
-    category: "South Indian",
-    available: true,
-    isVeg: true
-  },
-  {
-    id: "5",
-    name: "Gulab Jamun",
-    description: "Sweet milk dumplings in sugar syrup",
-    price: 99,
-    image: "https://images.unsplash.com/photo-1626132647523-66f3bf8f4d04?w=400",
-    category: "Desserts",
-    available: false,
-    isVeg: true
-  }
-];
-
 export default function ClientMenu() {
-  const [menuItems, setMenuItems] = useState(mockMenuItems);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState({
@@ -84,10 +31,23 @@ export default function ClientMenu() {
   });
   const { toast } = useToast();
 
+  const fetchMenuItems = useCallback(async () => {
+    const { data, error } = await supabase.from("menu_items").select("*").order("id");
+    if (error) {
+      toast({ title: "Error fetching menu", description: error.message, variant: "destructive" });
+    } else {
+      setMenuItems(data as MenuItem[]);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchMenuItems();
+  }, [fetchMenuItems]);
+
   const resetForm = () => {
     setFormData({
       name: "",
-      description: "", 
+      description: "",
       price: "",
       category: "",
       image: "",
@@ -105,7 +65,7 @@ export default function ClientMenu() {
         description: item.description,
         price: item.price.toString(),
         category: item.category,
-        image: item.image,
+        image: item.image || "",
         available: item.available,
         isVeg: item.isVeg || false
       });
@@ -115,87 +75,64 @@ export default function ClientMenu() {
     setIsDialogOpen(true);
   };
 
-  const handleSaveItem = () => {
+  const handleSaveItem = async () => {
     if (!formData.name || !formData.description || !formData.price || !formData.category) {
-      toast({
-        title: "Missing fields",
-        description: "Please fill in all required fields.",
-        variant: "destructive"
-      });
+      toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
       return;
     }
 
-    const newItem: MenuItem = {
-      id: editingItem?.id || `item_${Date.now()}`,
+    const itemData = {
       name: formData.name,
       description: formData.description,
       price: parseFloat(formData.price),
       category: formData.category,
       image: formData.image || "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400",
       available: formData.available,
-      isVeg: formData.isVeg
+      is_veg: formData.isVeg,
     };
 
     if (editingItem) {
-      setMenuItems(prev => prev.map(item => item.id === editingItem.id ? newItem : item));
-      toast({
-        title: "Item updated",
-        description: `${newItem.name} has been updated.`,
-      });
+      const { error } = await supabase.from("menu_items").update(itemData).eq("id", editingItem.id);
+      if (error) {
+        toast({ title: "Error updating item", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Item updated", description: `${itemData.name} has been updated.` });
+        fetchMenuItems();
+      }
     } else {
-      setMenuItems(prev => [...prev, newItem]);
-      toast({
-        title: "Item added",
-        description: `${newItem.name} has been added to the menu.`,
-      });
+      const { error } = await supabase.from("menu_items").insert(itemData);
+      if (error) {
+        toast({ title: "Error adding item", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Item added", description: `${itemData.name} has been added to the menu.` });
+        fetchMenuItems();
+      }
     }
-
-    // Send webhook data to n8n for menu updates
-    const webhookData = {
-      action: editingItem ? "update" : "create",
-      item: newItem,
-      kitchen_name: "CloudKitchen Demo",
-      timestamp: new Date().toISOString()
-    };
-    console.log("Menu update webhook data:", webhookData);
 
     setIsDialogOpen(false);
     resetForm();
   };
 
-  const handleDeleteItem = (itemId: string) => {
-    const item = menuItems.find(i => i.id === itemId);
-    setMenuItems(prev => prev.filter(item => item.id !== itemId));
-    
-    if (item) {
-      // Send webhook data for deletion
-      const webhookData = {
-        action: "delete",
-        item_id: itemId,
-        item_name: item.name,
-        kitchen_name: "CloudKitchen Demo",
-        timestamp: new Date().toISOString()
-      };
-      console.log("Menu delete webhook data:", webhookData);
-      
-      toast({
-        title: "Item deleted",
-        description: `${item.name} has been removed from the menu.`,
-      });
+  const handleDeleteItem = async (itemId: string) => {
+    const { error } = await supabase.from("menu_items").delete().eq("id", itemId);
+    if (error) {
+      toast({ title: "Error deleting item", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Item deleted", description: "The item has been removed from the menu." });
+      fetchMenuItems();
     }
   };
 
-  const handleToggleAvailability = (itemId: string) => {
-    setMenuItems(prev => prev.map(item => 
-      item.id === itemId ? { ...item, available: !item.available } : item
-    ));
-    
-    const item = menuItems.find(i => i.id === itemId);
-    if (item) {
+  const handleToggleAvailability = async (item: MenuItem) => {
+    const { error } = await supabase.from("menu_items").update({ available: !item.available }).eq("id", item.id);
+    if (error) {
+      toast({ title: "Error updating availability", description: error.message, variant: "destructive" });
+    } else {
       toast({
         title: `Item ${!item.available ? 'enabled' : 'disabled'}`,
         description: `${item.name} is now ${!item.available ? 'available' : 'unavailable'}.`,
       });
+      fetchMenuItems();
     }
   };
 
@@ -408,7 +345,7 @@ export default function ClientMenu() {
                           <span className="text-xl font-bold text-primary">₹{item.price}</span>
                           <Switch
                             checked={item.available}
-                            onCheckedChange={() => handleToggleAvailability(item.id)}
+                            onCheckedChange={() => handleToggleAvailability(item)}
                           />
                         </div>
                       </div>
