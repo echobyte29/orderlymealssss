@@ -1,23 +1,62 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Navigation } from "@/components/ui/navigation";
-import { OrderCard } from "@/components/OrderCard";
-import { getOrders, updateOrderStatus, Order } from "@/lib/db";
+import { OrderCard, Order } from "@/components/OrderCard";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/lib/supabaseClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ClientOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const { toast } = useToast();
+
+  const fetchOrders = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(`
+        *,
+        customers (
+          name,
+          email,
+          phone_number,
+          address
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast({ title: "Error fetching orders", description: error.message, variant: "destructive" });
+    } else {
+      setOrders(data as any[]);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    setOrders(getOrders());
-  }, []);
+    fetchOrders();
 
-  const handleStatusChange = (orderId: string, status: Order["status"]) => {
-    updateOrderStatus(orderId, status);
-    setOrders(getOrders());
+    const channel = supabase
+      .channel('orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        fetchOrders();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchOrders]);
+
+  const handleStatusChange = async (orderId: string, status: Order["payment_status"]) => {
+    const { error } = await supabase.from("orders").update({ payment_status: status }).eq("id", orderId);
+    if (error) {
+      toast({ title: "Error updating status", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Order status updated", description: `Order #${orderId} is now ${status}.` });
+      fetchOrders();
+    }
   };
 
-  const upcomingOrders = orders.filter(o => o.status === "Pending" || o.status === "Confirmed");
-  const pastOrders = orders.filter(o => o.status === "Delivered" || o.status === "Out for delivery");
+  const upcomingOrders = orders.filter(o => o.payment_status === "pending" || o.payment_status === "confirmed");
+  const pastOrders = orders.filter(o => o.payment_status === "delivered" || o.payment_status === "out for delivery");
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
