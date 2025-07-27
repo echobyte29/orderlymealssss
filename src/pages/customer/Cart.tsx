@@ -1,28 +1,67 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigation } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { mockMenuItems } from "./Menu";
 import { MenuItem } from "@/components/MenuCard";
-import { createOrder } from "@/lib/db";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Trash2 } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function CustomerCart() {
-  const [cartItems, setCartItems] = useState<MenuItem[]>(mockMenuItems.slice(0, 2));
+  const [cartItems, setCartItems] = useState<MenuItem[]>([]);
+  const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      // @ts-ignore
+      setUser(user);
+    };
+    fetchUser();
+    // For now, we'll use a placeholder for cart items.
+    // In a real app, this would come from local storage or a user-specific cart table.
+    const fetchCartItems = async () => {
+      const { data } = await supabase.from("menu_items").select("*").limit(2);
+      setCartItems(data as MenuItem[] || []);
+    };
+    fetchCartItems();
+  }, []);
 
   const totalAmount = cartItems.reduce((sum, item) => sum + item.price, 0);
 
-  const handleCheckout = () => {
-    createOrder({
-      customerName: "Test Customer",
-      items: cartItems,
+  const handleCheckout = async () => {
+    if (!user) {
+      toast({ title: "Not logged in", description: "Please log in to place an order.", variant: "destructive" });
+      navigate('/login');
+      return;
+    }
+
+    const orderSummary = {
+      items: cartItems.map(item => ({ id: item.id, name: item.name, price: item.price })),
+      total: totalAmount * 1.1,
+    };
+
+    const { error } = await supabase.from('orders').insert({
+      // @ts-ignore
+      customer_id: user.id,
+      order_summary: orderSummary,
+      total_amount: orderSummary.total,
+      payment_status: 'pending',
+      payment_method: 'cod',
     });
-    navigate("/payment");
+
+    if (error) {
+      toast({ title: "Order failed", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Order placed!", description: "Your order has been placed successfully." });
+      // Clear cart after successful order
+      setCartItems([]);
+      navigate("/order-confirmation");
+    }
   };
 
   return (
