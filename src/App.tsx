@@ -41,7 +41,7 @@ const App = () => (
           <Route path="/order-confirmation" element={<OrderConfirmation />} />
           
           {/* Client Routes */}
-          <Route path="/client" element={<ClientLogin />} />
+          <Route path="/login" element={<ClientLogin />} />
           <Route path="/client/dashboard" element={<ClientDashboard />} />
           <Route path="/client/orders" element={<ClientOrders />} />
           <Route path="/client/menu" element={<ClientMenu />} />

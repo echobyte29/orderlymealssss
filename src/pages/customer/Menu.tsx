@@ -1,25 +1,48 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Navigation } from "@/components/ui/navigation";
 import { MenuCard, MenuItem } from "@/components/MenuCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Search, Filter } from "lucide-react";
+import { Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-import { mockMenuItems } from "./Menu";
+import { supabase } from "@/lib/supabaseClient";
 
 const categories = ["All", "Main Course", "Rice", "South Indian", "Desserts", "Beverages"];
 
 export default function CustomerMenu() {
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
-  const filteredItems = mockMenuItems.filter(item => {
+  const fetchMenuItems = useCallback(async () => {
+    const { data, error } = await supabase.from("menu_items").select("*").order("id");
+    if (error) {
+      toast({ title: "Error fetching menu", description: error.message, variant: "destructive" });
+    } else {
+      setMenuItems(data as MenuItem[]);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchMenuItems();
+
+    const channel = supabase
+      .channel('menu_items')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => {
+        fetchMenuItems();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchMenuItems]);
+
+  const filteredItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         item.description.toLowerCase().includes(searchQuery.toLowerCase());
+                         (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -33,6 +56,18 @@ export default function CustomerMenu() {
     toast({
       title: "Added to cart",
       description: `${item.name} has been added to your cart.`,
+    });
+  };
+
+  const handleQuantityChange = (itemId: string, quantity: number) => {
+    setCart(prev => {
+      const newCart = { ...prev };
+      if (quantity === 0) {
+        delete newCart[itemId];
+      } else {
+        newCart[itemId] = quantity;
+      }
+      return newCart;
     });
   };
 
@@ -88,7 +123,8 @@ export default function CustomerMenu() {
               item={item}
               quantity={cart[item.id] || 0}
               onAddToCart={handleAddToCart}
-              showQuantityControls={false}
+              onQuantityChange={handleQuantityChange}
+              showQuantityControls={true}
             />
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigation } from "@/components/ui/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,10 +16,26 @@ import {
   Star
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabaseClient";
+import { OrderHistoryTable } from "@/components/OrderHistoryTable";
 
 export default function ClientDashboard() {
   const [isAcceptingOrders, setIsAcceptingOrders] = useState(true);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchOrderStatus = async () => {
+      const { data, error } = await supabase
+        .from("settings")
+        .select("value")
+        .eq("key", "accepting_orders")
+        .single();
+      if (data) {
+        setIsAcceptingOrders(data.value);
+      }
+    };
+    fetchOrderStatus();
+  }, []);
 
   // Mock dashboard data
   const dashboardData = {
@@ -39,25 +55,22 @@ export default function ClientDashboard() {
     ]
   };
 
-  const handleOrderToggle = (enabled: boolean) => {
+  const handleOrderToggle = async (enabled: boolean) => {
     setIsAcceptingOrders(enabled);
-    
-    // Here you would update the backend/database state
-    const orderData = {
-      kitchen_name: "CloudKitchen Demo",
-      accepting_orders: enabled,
-      timestamp: new Date().toISOString(),
-      status: enabled ? "online" : "offline"
-    };
-    
-    console.log("Order toggle webhook data:", orderData);
-    
-    toast({
-      title: enabled ? "Orders enabled" : "Orders disabled",
-      description: enabled 
-        ? "Your kitchen is now accepting new orders." 
-        : "Your kitchen has stopped accepting new orders.",
-    });
+    const { error } = await supabase
+      .from("settings")
+      .upsert({ key: "accepting_orders", value: enabled }, { onConflict: "key" });
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({
+        title: enabled ? "Orders enabled" : "Orders disabled",
+        description: enabled
+          ? "Your kitchen is now accepting new orders."
+          : "Your kitchen has stopped accepting new orders.",
+      });
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -151,38 +164,22 @@ export default function ClientDashboard() {
           </Card>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Recent Orders */}
+        <div className="grid lg:grid-cols-1 gap-6">
+          {/* Order History */}
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <ShoppingBag className="h-5 w-5" />
-                <span>Recent Orders</span>
+                <span>Order History</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {dashboardData.recentOrders.map((order) => (
-                  <div key={order.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium">{order.customer}</p>
-                      <p className="text-sm text-muted-foreground">#{order.id} • {order.time}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-primary">₹{order.amount}</p>
-                      <Badge className={getStatusColor(order.status)}>
-                        {order.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Button variant="outline" className="w-full mt-4">
-                View All Orders
-              </Button>
+              {/* Add filtering options here */}
+              <OrderHistoryTable />
             </CardContent>
           </Card>
-
+        </div>
+        <div className="grid lg:grid-cols-2 gap-6">
           {/* Popular Items */}
           <Card className="shadow-card">
             <CardHeader>

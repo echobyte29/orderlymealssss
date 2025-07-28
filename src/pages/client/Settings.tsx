@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigation } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,19 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { 
   Store, 
   Bell, 
   Webhook, 
-  Shield, 
-  Clock,
-  MapPin,
-  Phone,
-  Mail,
-  Globe
+  Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function ClientSettings() {
   const [kitchenInfo, setKitchenInfo] = useState({
@@ -49,14 +44,25 @@ export default function ClientSettings() {
     dailyReports: false
   });
 
-  const [webhooks, setWebhooks] = useState({
-    n8nUrl: "",
-    orderWebhook: "",
-    paymentWebhook: "",
-    menuWebhook: ""
-  });
+  const [razorpayKeyId, setRazorpayKeyId] = useState("");
+  const [razorpayKeySecret, setRazorpayKeySecret] = useState("");
 
   const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const { data, error } = await supabase.from("settings").select("*");
+      if (error) {
+        toast({ title: "Error fetching settings", description: error.message, variant: "destructive" });
+      } else {
+        const keyId = data.find(s => s.key === 'razorpay_key_id')?.value;
+        const keySecret = data.find(s => s.key === 'razorpay_key_secret')?.value;
+        if (keyId) setRazorpayKeyId(keyId as string);
+        if (keySecret) setRazorpayKeySecret(keySecret as string);
+      }
+    };
+    fetchSettings();
+  }, [toast]);
 
   const handleSaveKitchenInfo = () => {
     toast({
@@ -79,53 +85,16 @@ export default function ClientSettings() {
     });
   };
 
-  const handleSaveWebhooks = () => {
-    // Validate webhook URLs
-    const urlRegex = /^https?:\/\/.+/;
-    if (webhooks.n8nUrl && !urlRegex.test(webhooks.n8nUrl)) {
-      toast({
-        title: "Invalid URL",
-        description: "Please enter a valid webhook URL.",
-        variant: "destructive"
-      });
-      return;
-    }
+  const handleSaveRazorpayKeys = async () => {
+    const { error } = await supabase.from("settings").upsert([
+      { key: 'razorpay_key_id', value: razorpayKeyId },
+      { key: 'razorpay_key_secret', value: razorpayKeySecret }
+    ], { onConflict: 'key' });
 
-    toast({
-      title: "Webhook configuration saved",
-      description: "Your n8n integration settings have been updated.",
-    });
-  };
-
-  const testWebhook = async (url: string, type: string) => {
-    if (!url) {
-      toast({
-        title: "No webhook URL",
-        description: "Please enter a webhook URL first.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const testData = {
-      test: true,
-      type: type,
-      timestamp: new Date().toISOString(),
-      kitchen_name: kitchenInfo.name
-    };
-
-    try {
-      console.log(`Testing ${type} webhook:`, url, testData);
-      toast({
-        title: "Webhook test sent",
-        description: `Test payload sent to ${type} webhook. Check your n8n workflow.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Webhook test failed",
-        description: "Failed to send test webhook. Please check the URL.",
-        variant: "destructive"
-      });
+    if (error) {
+      toast({ title: "Error saving settings", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Settings saved successfully" });
     }
   };
 
@@ -327,110 +296,30 @@ export default function ClientSettings() {
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Webhook className="h-5 w-5" />
-                  <span>n8n Webhook Integration</span>
+                  <span>Razorpay Integration</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="bg-muted p-4 rounded-lg">
-                  <h4 className="font-semibold mb-2">Integration Setup</h4>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Connect your cloud kitchen with n8n workflows to automate order processing, 
-                    notifications, and data synchronization.
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Create webhook triggers in n8n and paste the URLs below to enable real-time data flow.
-                  </p>
+                <div>
+                  <Label htmlFor="razorpay-key-id">Key ID</Label>
+                  <Input
+                    id="razorpay-key-id"
+                    value={razorpayKeyId}
+                    onChange={(e) => setRazorpayKeyId(e.target.value)}
+                  />
                 </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="n8nUrl">Main n8n Webhook URL</Label>
-                    <div className="flex space-x-2">
-                      <Input
-                        id="n8nUrl"
-                        placeholder="https://your-n8n-instance.com/webhook/..."
-                        value={webhooks.n8nUrl}
-                        onChange={(e) => setWebhooks(prev => ({ ...prev, n8nUrl: e.target.value }))}
-                      />
-                      <Button 
-                        variant="outline" 
-                        onClick={() => testWebhook(webhooks.n8nUrl, "main")}
-                      >
-                        Test
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="orderWebhook">Order Events Webhook</Label>
-                    <div className="flex space-x-2">
-                      <Input
-                        id="orderWebhook"
-                        placeholder="https://your-n8n-instance.com/webhook/orders"
-                        value={webhooks.orderWebhook}
-                        onChange={(e) => setWebhooks(prev => ({ ...prev, orderWebhook: e.target.value }))}
-                      />
-                      <Button 
-                        variant="outline" 
-                        onClick={() => testWebhook(webhooks.orderWebhook, "order")}
-                      >
-                        Test
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Triggers on new orders, status updates, and cancellations
-                    </p>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="paymentWebhook">Payment Events Webhook</Label>
-                    <div className="flex space-x-2">
-                      <Input
-                        id="paymentWebhook"
-                        placeholder="https://your-n8n-instance.com/webhook/payments"
-                        value={webhooks.paymentWebhook}
-                        onChange={(e) => setWebhooks(prev => ({ ...prev, paymentWebhook: e.target.value }))}
-                      />
-                      <Button 
-                        variant="outline" 
-                        onClick={() => testWebhook(webhooks.paymentWebhook, "payment")}
-                      >
-                        Test
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Triggers on payment success, failure, and refunds
-                    </p>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="menuWebhook">Menu Changes Webhook</Label>
-                    <div className="flex space-x-2">
-                      <Input
-                        id="menuWebhook"
-                        placeholder="https://your-n8n-instance.com/webhook/menu"
-                        value={webhooks.menuWebhook}
-                        onChange={(e) => setWebhooks(prev => ({ ...prev, menuWebhook: e.target.value }))}
-                      />
-                      <Button 
-                        variant="outline" 
-                        onClick={() => testWebhook(webhooks.menuWebhook, "menu")}
-                      >
-                        Test
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Triggers on menu item additions, updates, and deletions
-                    </p>
-                  </div>
+                <div>
+                  <Label htmlFor="razorpay-key-secret">Key Secret</Label>
+                  <Input
+                    id="razorpay-key-secret"
+                    type="password"
+                    value={razorpayKeySecret}
+                    onChange={(e) => setRazorpayKeySecret(e.target.value)}
+                  />
                 </div>
-                
-                <Button onClick={handleSaveWebhooks} className="bg-gradient-primary">
-                  Save Webhook Configuration
-                </Button>
+                <Button onClick={handleSaveRazorpayKeys}>Save Razorpay Keys</Button>
               </CardContent>
             </Card>
-
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle>Webhook Payload Examples</CardTitle>
