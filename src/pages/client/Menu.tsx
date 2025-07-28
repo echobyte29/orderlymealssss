@@ -74,7 +74,7 @@ export default function ClientMenu() {
       name: "",
       description: "",
       price: "",
-      category: "",
+      category_id: "",
       image: "",
       available: true,
       isVeg: true
@@ -89,7 +89,7 @@ export default function ClientMenu() {
         name: item.name,
         description: item.description,
         price: item.price.toString(),
-        category: item.category,
+        category_id: item.category_id,
         image: item.image || "",
         available: item.available,
         isVeg: item.isVeg || false
@@ -101,7 +101,7 @@ export default function ClientMenu() {
   };
 
   const handleSaveItem = async () => {
-    if (!formData.name || !formData.description || !formData.price || !formData.category) {
+    if (!formData.name || !formData.description || !formData.price || !formData.category_id) {
       toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
       return;
     }
@@ -110,7 +110,7 @@ export default function ClientMenu() {
       name: formData.name,
       description: formData.description,
       price: parseFloat(formData.price),
-      category: formData.category,
+      category_id: formData.category_id,
       image: formData.image || "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400",
       available: formData.available,
       is_veg: formData.isVeg,
@@ -158,6 +158,30 @@ export default function ClientMenu() {
         description: `${item.name} is now ${!item.available ? 'available' : 'unavailable'}.`,
       });
       fetchMenuItems();
+    }
+  };
+
+  const handleDragEnd = async (event: any) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      setCategories((items) => {
+        const oldIndex = items.findIndex(item => item.id === active.id);
+        const newIndex = items.findIndex(item => item.id === over.id);
+        const newItems = arrayMove(items, oldIndex, newIndex);
+
+        const updates = newItems.map((item, index) => ({
+          id: item.id,
+          position: index + 1,
+        }));
+
+        supabase.from('categories').upsert(updates).then(({ error }) => {
+          if (error) {
+            toast({ title: "Error updating order", description: error.message, variant: "destructive" });
+          }
+        });
+
+        return newItems;
+      });
     }
   };
 
@@ -215,14 +239,14 @@ export default function ClientMenu() {
                   
                   <div>
                     <Label htmlFor="category">Category *</Label>
-                    <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
+                    <Select value={formData.category_id} onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
                         {categories.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
+                          <SelectItem key={category.id} value={category.id.toString()}>
+                            {category.name}
                           </SelectItem>
                         ))}
                       </SelectContent>

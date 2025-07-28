@@ -75,7 +75,6 @@ export default function CustomerCart() {
       toast({ title: "Order failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Order placed!", description: "Your order has been placed successfully." });
-      // Clear cart after successful order
       setCartItems([]);
       navigate("/payment", { state: { order: data[0] } });
     }
