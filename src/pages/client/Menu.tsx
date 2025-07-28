@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Navigation } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,26 +15,48 @@ import { MenuItem } from "@/components/MenuCard";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
+import { SortableCategory } from "@/components/SortableCategory";
 
-const categories = ["Main Course", "Rice", "South Indian", "Desserts", "Beverages"];
+interface Category {
+  id: number;
+  name: string;
+  position: number;
+}
 
 export default function ClientMenu() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     price: "",
-    category: "",
+    category_id: "",
     image: "",
     available: true,
     isVeg: true
   });
   const { toast } = useToast();
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const fetchCategories = useCallback(async () => {
+    const { data, error } = await supabase.from("categories").select("*").order("position");
+    if (error) {
+      toast({ title: "Error fetching categories", description: error.message, variant: "destructive" });
+    } else {
+      setCategories(data as Category[]);
+    }
+  }, [toast]);
+
   const fetchMenuItems = useCallback(async () => {
-    const { data, error } = await supabase.from("menu_items").select("*").order("id");
+    const { data, error } = await supabase.from("menu_items").select("*").order("position");
     if (error) {
       toast({ title: "Error fetching menu", description: error.message, variant: "destructive" });
     } else {
@@ -41,8 +65,9 @@ export default function ClientMenu() {
   }, [toast]);
 
   useEffect(() => {
+    fetchCategories();
     fetchMenuItems();
-  }, [fetchMenuItems]);
+  }, [fetchCategories, fetchMenuItems]);
 
   const resetForm = () => {
     setFormData({
@@ -284,78 +309,16 @@ export default function ClientMenu() {
           </Card>
         </div>
 
-        {/* Menu Items by Category */}
-        {categories.map((category) => {
-          const categoryItems = menuItems.filter(item => item.category === category);
-          if (categoryItems.length === 0) return null;
-          
-          return (
-            <div key={category} className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold">{category}</h2>
-                <Badge variant="outline">{categoryItems.length} items</Badge>
-              </div>
-              
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {categoryItems.map((item) => (
-                  <Card key={item.id} className="shadow-card group">
-                    <div className="relative">
-                      <img 
-                        src={item.image} 
-                        alt={item.name}
-                        className="w-full h-48 object-cover rounded-t-lg"
-                      />
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="flex space-x-1">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => handleOpenDialog(item)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDeleteItem(item.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      {!item.available && (
-                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-t-lg">
-                          <Badge variant="destructive">Out of Stock</Badge>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <CardContent className="p-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-semibold">{item.name}</h3>
-                          <Badge variant={item.isVeg ? "secondary" : "destructive"}>
-                            {item.isVeg ? "🌱" : "🍖"}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {item.description}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xl font-bold text-primary">₹{item.price}</span>
-                          <Switch
-                            checked={item.available}
-                            onCheckedChange={() => handleToggleAvailability(item)}
-                          />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
+            {categories.map((category) => {
+              const categoryItems = menuItems.filter(item => item.category_id === category.id);
+              return (
+                <SortableCategory key={category.id} id={category.id} category={category} items={categoryItems} />
+              );
+            })}
+          </SortableContext>
+        </DndContext>
 
         {menuItems.length === 0 && (
           <Card className="shadow-card text-center py-12">
